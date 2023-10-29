@@ -504,10 +504,7 @@ defmodule ThousandIsland.HandlerTest do
     end
 
     test "it should send `start` telemetry event on startup" do
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector, [[:thousand_island, :connection, :start]]}
-        )
+      TelemetryHelper.attach([:thousand_island, :connection, :start])
 
       {:ok, port} = start_handler(Telemetry.Closer)
 
@@ -515,41 +512,35 @@ defmodule ThousandIsland.HandlerTest do
       {:ok, {ip, port}} = :inet.sockname(client)
       Process.sleep(100)
 
-      assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:thousand_island, :connection, :start], %{monotonic_time: integer()},
-                %{
-                  parent_telemetry_span_context: reference(),
-                  remote_address: ip,
-                  remote_port: port,
-                  telemetry_span_context: reference()
-                }}
-             ]
+      assert_receive event = {[:thousand_island, :connection, :start], _measurements, _metadata}
+
+      assert event
+             ~> {[:thousand_island, :connection, :start], %{monotonic_time: integer()},
+              %{
+                parent_telemetry_span_context: reference(),
+                remote_address: ip,
+                remote_port: port,
+                telemetry_span_context: reference()
+              }}
     end
 
     test "it should send `ready` telemetry event once socket is ready" do
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector, [[:thousand_island, :connection, :ready]]}
-        )
+      TelemetryHelper.attach([:thousand_island, :connection, :ready])
 
       {:ok, port} = start_handler(Telemetry.Closer)
 
       {:ok, _client} = :gen_tcp.connect(:localhost, port, active: false)
       Process.sleep(100)
 
-      assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:thousand_island, :connection, :ready], %{monotonic_time: integer()},
-                %{telemetry_span_context: reference()}}
-             ]
+      assert_receive event = {[:thousand_island, :connection, :ready], _measurements, _metadata}
+
+      assert event
+             ~> {[:thousand_island, :connection, :ready], %{monotonic_time: integer()},
+              %{telemetry_span_context: reference()}}
     end
 
     test "it should send `async_recv` telemetry event on async receipt of data" do
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector, [[:thousand_island, :connection, :async_recv]]}
-        )
+      TelemetryHelper.attach([:thousand_island, :connection, :async_recv])
 
       {:ok, port} = start_handler(Telemetry.CloseOnData)
 
@@ -557,11 +548,12 @@ defmodule ThousandIsland.HandlerTest do
       :gen_tcp.send(client, "ping")
       Process.sleep(100)
 
-      assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:thousand_island, :connection, :async_recv], %{data: "ping"},
-                %{telemetry_span_context: reference()}}
-             ]
+      assert_receive event =
+                       {[:thousand_island, :connection, :async_recv], _measurements, _metadata}
+
+      assert event
+             ~> {[:thousand_island, :connection, :async_recv], %{data: "ping"},
+              %{telemetry_span_context: reference()}}
     end
 
     defmodule Telemetry.Closer do
@@ -575,10 +567,7 @@ defmodule ThousandIsland.HandlerTest do
     end
 
     test "it should send `stop` telemetry event on shutdown" do
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector, [[:thousand_island, :connection, :stop]]}
-        )
+      TelemetryHelper.attach([:thousand_island, :connection, :stop])
 
       {:ok, port} = start_handler(Telemetry.Closer)
 
@@ -588,24 +577,24 @@ defmodule ThousandIsland.HandlerTest do
       :gen_tcp.connect(:localhost, port, active: false)
       Process.sleep(100)
 
-      assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:thousand_island, :connection, :stop],
-                %{
-                  duration: integer(),
-                  monotonic_time: integer(),
-                  recv_cnt: 0,
-                  recv_oct: 0,
-                  send_cnt: 1,
-                  send_oct: 5
-                },
-                %{
-                  parent_telemetry_span_context: reference(),
-                  remote_address: ip,
-                  remote_port: port,
-                  telemetry_span_context: reference()
-                }}
-             ]
+      assert_receive event = {[:thousand_island, :connection, :stop], _measurements, _metadata}
+
+      assert event
+             ~> {[:thousand_island, :connection, :stop],
+              %{
+                duration: integer(),
+                monotonic_time: integer(),
+                recv_cnt: 0,
+                recv_oct: 0,
+                send_cnt: 1,
+                send_oct: 5
+              },
+              %{
+                parent_telemetry_span_context: reference(),
+                remote_address: ip,
+                remote_port: port,
+                telemetry_span_context: reference()
+              }}
     end
 
     defmodule Telemetry.Error do
@@ -619,10 +608,7 @@ defmodule ThousandIsland.HandlerTest do
 
     @tag capture_log: true
     test "it should send `stop` telemetry event with payload on error" do
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector, [[:thousand_island, :connection, :stop]]}
-        )
+      TelemetryHelper.attach([:thousand_island, :connection, :stop])
 
       {:ok, port} = start_handler(Telemetry.Error)
 
@@ -630,25 +616,25 @@ defmodule ThousandIsland.HandlerTest do
       {:ok, {ip, port}} = :inet.sockname(client)
       Process.sleep(100)
 
-      assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:thousand_island, :connection, :stop],
-                %{
-                  duration: integer(),
-                  monotonic_time: integer(),
-                  recv_cnt: 0,
-                  recv_oct: 0,
-                  send_cnt: 0,
-                  send_oct: 0
-                },
-                %{
-                  error: :nope,
-                  parent_telemetry_span_context: reference(),
-                  remote_address: ip,
-                  remote_port: port,
-                  telemetry_span_context: reference()
-                }}
-             ]
+      assert_receive event = {[:thousand_island, :connection, :stop], _measurements, _metadata}
+
+      assert event
+             ~> {[:thousand_island, :connection, :stop],
+              %{
+                duration: integer(),
+                monotonic_time: integer(),
+                recv_cnt: 0,
+                recv_oct: 0,
+                send_cnt: 0,
+                send_oct: 0
+              },
+              %{
+                error: :nope,
+                parent_telemetry_span_context: reference(),
+                remote_address: ip,
+                remote_port: port,
+                telemetry_span_context: reference()
+              }}
     end
   end
 

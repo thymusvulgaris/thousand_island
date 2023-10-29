@@ -90,29 +90,23 @@ defmodule ThousandIsland.ListenerTest do
     end
 
     test "emits expected telemetry event" do
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector,
-           [
-             [:thousand_island, :listener, :start]
-           ]}
-        )
+      TelemetryHelper.attach([:thousand_island, :listener, :start])
 
       {:ok, %{listener_socket: socket}} =
         Listener.init(@server_config)
 
       # We expect a monotonic start time as a measurement in the event.
-      assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:thousand_island, :listener, :start], %{monotonic_time: integer()},
-                %{
-                  telemetry_span_context: reference(),
-                  local_address: {0, 0, 0, 0},
-                  local_port: @server_config.port,
-                  transport_module: ThousandIsland.Transports.TCP,
-                  transport_options: []
-                }}
-             ]
+      assert_receive event = {[:thousand_island, :listener, :start], _measurements, _metadata}
+
+      assert event
+             ~> {[:thousand_island, :listener, :start], %{monotonic_time: integer()},
+              %{
+                telemetry_span_context: reference(),
+                local_address: {0, 0, 0, 0},
+                local_port: integer(),
+                transport_module: ThousandIsland.Transports.TCP,
+                transport_options: []
+              }}
 
       # Close the socket to cleanup.
       :gen_tcp.close(socket)
@@ -148,24 +142,15 @@ defmodule ThousandIsland.ListenerTest do
       {:ok, %{listener_span: span, listener_socket: socket}} =
         Listener.init(@server_config)
 
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector,
-           [
-             [:thousand_island, :listener, :stop]
-           ]}
-        )
+      TelemetryHelper.attach([:thousand_island, :listener, :stop])
 
       Listener.terminate(:normal, %{listener_span: span})
 
       # We expect a monotonic stop time and a duration
       # as measurements in the event.
-      assert [
-               {[:thousand_island, :listener, :stop],
-                %{monotonic_time: stop_monotonic_time, duration: duration}, stop_metadata}
-             ] = ThousandIsland.TelemetryCollector.get_events(collector_pid)
-
-      assert is_integer(stop_monotonic_time)
+      assert_receive event =
+                       {[:thousand_island, :listener, :stop],
+                        %{monotonic_time: stop_monotonic_time, duration: duration}, stop_metadata}
 
       # We expect the duration to be the monotonic stop
       # time minus the monotonic start time.
@@ -174,6 +159,17 @@ defmodule ThousandIsland.ListenerTest do
 
       # The start and stop metadata should be equal.
       assert stop_metadata == span.start_metadata
+
+      assert event
+             ~> {[:thousand_island, :listener, :stop],
+              %{duration: integer(), monotonic_time: integer()},
+              %{
+                telemetry_span_context: reference(),
+                local_address: {0, 0, 0, 0},
+                local_port: integer(),
+                transport_module: ThousandIsland.Transports.TCP,
+                transport_options: []
+              }}
 
       # Close the socket to cleanup.
       :gen_tcp.close(socket)

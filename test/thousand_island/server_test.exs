@@ -137,10 +137,7 @@ defmodule ThousandIsland.ServerTest do
     end
 
     test "should emit telemetry events as expected" do
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector, [[:thousand_island, :acceptor, :spawn_error]]}
-        )
+      TelemetryHelper.attach([:thousand_island, :acceptor, :spawn_error])
 
       {:ok, _, port} =
         start_handler(LongEcho,
@@ -158,11 +155,12 @@ defmodule ThousandIsland.ServerTest do
       # Give things enough time for the second connection to time out
       Process.sleep(700)
 
-      assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:thousand_island, :acceptor, :spawn_error], %{monotonic_time: integer()},
-                %{telemetry_span_context: reference()}}
-             ]
+      assert_receive event =
+                       {[:thousand_island, :acceptor, :spawn_error], _measurements, _metadata}
+
+      assert event
+             ~> {[:thousand_island, :acceptor, :spawn_error], %{monotonic_time: integer()},
+              %{telemetry_span_context: reference()}}
     end
   end
 
@@ -306,23 +304,36 @@ defmodule ThousandIsland.ServerTest do
       Task.await(task)
     end
 
-    test "it should emit telemetry events as expected" do
-      {:ok, collector_pid} =
-        start_supervised(
-          {ThousandIsland.TelemetryCollector,
-           [
-             [:thousand_island, :listener, :start],
-             [:thousand_island, :listener, :stop],
-             [:thousand_island, :acceptor, :start],
-             [:thousand_island, :acceptor, :stop]
-           ]}
-        )
+    test "telemetry events as expected" do
+      TelemetryHelper.attach_many([
+        [:thousand_island, :listener, :start],
+        [:thousand_island, :listener, :stop],
+        [:thousand_island, :acceptor, :start],
+        [:thousand_island, :acceptor, :stop]
+      ])
 
       {:ok, server_pid, _} = start_handler(Echo, num_acceptors: 1)
 
       ThousandIsland.stop(server_pid)
 
-      assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
+      assert_receive listener_start_event =
+                       {[:thousand_island, :listener, :start], _measurements, _metadata}
+
+      assert_receive acceptor_start_event =
+                       {[:thousand_island, :acceptor, :start], _measurements, _metadata}
+
+      assert_receive listener_stop_event =
+                       {[:thousand_island, :listener, :stop], _measurements, _metadata}
+
+      assert_receive acceptor_stop_event =
+                       {[:thousand_island, :acceptor, :stop], _measurements, _metadata}
+
+      assert [
+               listener_start_event,
+               acceptor_start_event,
+               listener_stop_event,
+               acceptor_stop_event
+             ]
              ~> [
                {[:thousand_island, :listener, :start], %{monotonic_time: integer()},
                 %{

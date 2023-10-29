@@ -99,14 +99,10 @@ defmodule ThousandIsland.SocketTest do
       end
 
       test "it should emit telemetry events as expected", context do
-        {:ok, collector_pid} =
-          start_supervised(
-            {ThousandIsland.TelemetryCollector,
-             [
-               [:thousand_island, :connection, :recv],
-               [:thousand_island, :connection, :send]
-             ]}
-          )
+        TelemetryHelper.attach_many([
+          [:thousand_island, :connection, :recv],
+          [:thousand_island, :connection, :send]
+        ])
 
         {:ok, port} = start_handler(Echo, context.server_opts)
         {:ok, client} = context.client_mod.connect(~c"localhost", port, context.client_opts)
@@ -118,7 +114,13 @@ defmodule ThousandIsland.SocketTest do
         # Give the server process a chance to shut down
         Process.sleep(100)
 
-        assert ThousandIsland.TelemetryCollector.get_events(collector_pid)
+        assert_receive recv_event =
+                         {[:thousand_island, :connection, :recv], _measurements, _metadata}
+
+        assert_receive send_event =
+                         {[:thousand_island, :connection, :send], _measurements, _metadata}
+
+        assert [recv_event, send_event]
                ~> [
                  {[:thousand_island, :connection, :recv], %{data: "HELLO"},
                   %{telemetry_span_context: reference()}},
